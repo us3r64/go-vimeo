@@ -110,6 +110,11 @@ type Upload struct {
 	Size        int64  `json:"size,omitempty"`
 }
 
+// Transcode internal object provides access to video file trancoding status
+type Transcode struct {
+	Status string `json:"status,omitempty"`
+}
+
 // Video represents a video.
 type Video struct {
 	URI           string        `json:"uri,omitempty"`
@@ -138,6 +143,7 @@ type Video struct {
 	ResourceKey   string        `json:"resource_key,omitempty"`
 	EmbedPresets  *EmbedPresets `json:"embed_presets,omitempty"`
 	Upload        *Upload       `json:"upload,omitempty"`
+	Transcode     *Transcode    `json:"transcode,omitempty"`
 }
 
 // TitleRequest a request to edit an embed settings.
@@ -228,6 +234,7 @@ func (v Video) GetID() int {
 type UploadVideoRequest struct {
 	FileName string  `json:"file_name"`
 	Upload   *Upload `json:"upload,omitempty"`
+	*VideoRequest
 }
 
 func listVideo(c *Client, url string, opt ...CallOption) ([]*Video, *Response, error) {
@@ -326,6 +333,88 @@ func uploadVideo(c *Client, method string, url string, file *os.File) (*Video, *
 	completeVideo, resp, err := getVideo(c, u)
 
 	return completeVideo, resp, err
+}
+
+func createUploadVideo(c *Client, method string, url string, reqUpload *UploadVideoRequest) (*Video, *Response, error) {
+	if c.Config.Uploader == nil {
+		return nil, nil, errors.New("uploader can't be nil if you need upload video")
+	}
+
+	return getUploadVideo(c, method, url, reqUpload)
+}
+
+func uploadVideoSource(c *Client, url string, file *os.File) error {
+	if c.Config.Uploader == nil {
+		return errors.New("uploader can't be nil if you need upload video")
+	}
+
+	return c.Config.Uploader.UploadFromFile(c, url, file)
+}
+
+func resumeUploadVideo(c *Client, vid int, file *os.File) (*Video, *Response, error) {
+	if c.Config.Uploader == nil {
+		return nil, nil, errors.New("uploader can't be nil if you need upload video")
+	}
+
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if stat.IsDir() {
+		return nil, nil, errors.New("the video file can't be a directory")
+	}
+
+	reqFilterOpts := OptFields{"uri", "status", "upload"}
+
+	u := fmt.Sprintf("videos/%d", vid)
+	video, _, err := getVideo(c, u, reqFilterOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// get the offset
+	offset, _, err := getVideoUploadOffset(c, video.Upload.UploadLink, reqFilterOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = c.Config.Uploader.ResumeUploadFromFile(c, video.Upload.UploadLink, file, offset)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	u = fmt.Sprintf("videos/%d", video.GetID())
+	completeVideo, resp, err := getVideo(c, u)
+
+	return completeVideo, resp, err
+}
+
+func getVideoUploadOffset(c *Client, url string, opt ...CallOption) (int64, *Response, error) {
+	u, err := addOptions(url, opt...)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	req, err := c.NewRequest("HEAD", u, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Tus-Resumable", "1.0.0")
+
+	video := &Video{}
+
+	resp, err := c.Do(req, video)
+	if err != nil {
+		return 0, resp, err
+	}
+
+	offset, err := strconv.ParseInt(resp.Header.Get("Upload-Offset"), 10, 64)
+	if err != nil {
+		return 0, resp, errors.New("video not resumable, no Upload-Offset header")
+	}
+
+	return offset, resp, err
 }
 
 func uploadVideoByURL(c *Client, uri, videoURL string) (*Video, *Response, error) {

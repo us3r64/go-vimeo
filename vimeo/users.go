@@ -571,7 +571,37 @@ func (s *UsersService) UploadVideo(uid string, file *os.File) (*Video, *Response
 	return video, resp, err
 }
 
-// UploadVideo upload video by url.
+// CreateUploadVideo creates upload video file.
+// Passing the empty string will edit authenticated user.
+//
+// Vimeo API docs: https://developer.vimeo.com/api/playground/users/%7Buser_id%7D/videos
+func (s *UsersService) CreateUploadVideo(uid string, reqUpload *UploadVideoRequest) (*Video, *Response, error) {
+	var u string
+	if uid == "" {
+		u = "me/videos"
+	} else {
+		u = fmt.Sprintf("users/%s/videos", uid)
+	}
+
+	return createUploadVideo(s.client, "POST", u, reqUpload)
+}
+
+// UploadVideoSource upload video source for a created upload video.
+//
+// Vimeo API docs: https://developer.vimeo.com/api/playground/users/%7Buser_id%7D/videos
+func (s *UsersService) UploadVideoSource(url string, file *os.File) error {
+	return uploadVideoSource(s.client, url, file)
+}
+
+// ResumeUploadVideo resumes upload video file.
+// Passing the empty string will edit authenticated user.
+//
+// https://developer.vimeo.com/api/upload/videos#resumable-approach-step-1
+func (s *UsersService) ResumeUploadVideo(vid int, file *os.File) (*Video, *Response, error) {
+	return resumeUploadVideo(s.client, vid, file)
+}
+
+// UploadVideoByURL upload video by url.
 // Passing the empty string will edit authenticated user.
 //
 // Vimeo API docs: https://developer.vimeo.com/api/playground/users/%7Buser_id%7D/videos
