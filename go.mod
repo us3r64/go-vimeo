@@ -1,1 +1,1 @@
-module github.com/silentsokolov/go-vimeo
+module github.com/us3r64/go-vimeo
